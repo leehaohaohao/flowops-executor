@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+flowops-executor
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env.dev
+.env.prod
+
+# Config files (contains sensitive data)
+config/config.yaml
+config/config.dev.yaml
+config/config.prod.yaml
+
+# Build output
+/build/
+/dist/
+
+# Logs
+*.log
+logs/
+
+# Claude
+.claude

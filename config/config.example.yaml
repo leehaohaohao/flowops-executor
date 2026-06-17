@@ -1,0 +1,22 @@
+# FlowOps Executor 配置文件示例
+# 复制此文件并重命名为 config.{env}.yaml
+# cp config.example.yaml config.dev.yaml
+
+server:
+  port: 8080
+  mode: debug  # debug | release
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: your_username
+  password: your_password
+  dbname: flowops
+  charset: utf8mb4
+
+log:
+  level: info           # debug | info | warn | error
+  file_path: ./logs/app.log
+  max_size: 100         # 单个日志文件最大尺寸，单位MB
+  max_backups: 7        # 保留旧日志文件最大数量
+  max_age: 30           # 保留旧日志文件最大天数
