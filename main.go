@@ -63,6 +63,7 @@ func main() {
 	<-quit
 	fmt.Println("\n收到关闭信号，正在优雅退出...")
 	cancel()
+	r.Stop()
 
 	fmt.Printf("FlowOps Executor 已停止 (env: %s)\n", env)
 }

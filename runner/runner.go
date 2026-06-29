@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/leehaohaohao/nexa-protocol/go/client"
+	"github.com/leehaohaohao/nexa-protocol/go/codec"
 )
 
 type Runner struct {
-	client *client.Client
+	client   *client.Client
+	runnerId string
 }
 
 func New(cfg *config.Config) *Runner {
@@ -29,7 +31,8 @@ func New(cfg *config.Config) *Runner {
 	}
 
 	return &Runner{
-		client: client.New(opts...),
+		client:   client.New(opts...),
+		runnerId: cfg.Runner.Id,
 	}
 }
 
@@ -48,21 +51,22 @@ func (r *Runner) Start(ctx context.Context, masterAddr string) error {
 	r.client.StartHeartbeat(ctx)
 	fmt.Println("[runner] 心跳已启动")
 
-	go func() {
-		<-ctx.Done()
-		r.Stop()
-	}()
-
 	return nil
 }
 
 func (r *Runner) Stop() {
 	fmt.Println("[runner] 正在断开连接...")
-	if err := r.client.Disconnect("shutdown"); err != nil {
-		fmt.Printf("[runner] 断开连接失败: %v\n", err)
-	} else {
-		fmt.Println("[runner] 已断开连接")
-	}
+
+	// 发送 disconnect 消息
+	env := codec.BuildDisconnectRequest(r.runnerId, "shutdown")
+	data, _ := codec.MarshalEnvelope(env)
+	_ = codec.WriteFrame(r.client.Conn(), data)
+
+	// 等待 TCP 发送缓冲区刷新，确保对端读取到 disconnect
+	time.Sleep(200 * time.Millisecond)
+
+	_ = r.client.Conn().Close()
+	fmt.Println("[runner] 已断开连接")
 }
 
 func getLocalIP() string {
