@@ -1,10 +1,12 @@
 package config
 
 type Config struct {
-	Server struct {
-		Port int    `yaml:"port"`
-		Mode string `yaml:"mode"` // debug | release
-	} `yaml:"server"`
+	Runner struct {
+		Id                string `yaml:"id"`                 // runner 唯一标识
+		MasterAddr        string `yaml:"master_addr"`        // master 地址，如 127.0.0.1:9000
+		HeartbeatInterval int    `yaml:"heartbeat_interval"` // 心跳间隔（秒），默认 10
+		Version           string `yaml:"version"`            // runner 版本号
+	} `yaml:"runner"`
 	Database struct {
 		Host     string `yaml:"host"`
 		Port     int    `yaml:"port"`
