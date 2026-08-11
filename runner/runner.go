@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"flowops-executor/config"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/leehaohaohao/nexa-protocol/go/client"
@@ -12,8 +13,10 @@ import (
 )
 
 type Runner struct {
-	client   *client.Client
-	runnerId string
+	client            *client.Client
+	runnerId          string
+	heartbeatInterval time.Duration
+	runningTasks      atomic.Int32
 }
 
 func New(cfg *config.Config) *Runner {
@@ -22,17 +25,14 @@ func New(cfg *config.Config) *Runner {
 		client.WithVersion(cfg.Runner.Version),
 	}
 
-	if cfg.Runner.HeartbeatInterval > 0 {
-		opts = append(opts, client.WithHeartbeatInterval(time.Duration(cfg.Runner.HeartbeatInterval)*time.Second))
-	}
-
 	if ip := getLocalIP(); ip != "" {
 		opts = append(opts, client.WithIP(ip))
 	}
 
 	return &Runner{
-		client:   client.New(opts...),
-		runnerId: cfg.Runner.Id,
+		client:            client.New(opts...),
+		runnerId:          cfg.Runner.Id,
+		heartbeatInterval: time.Duration(cfg.Runner.HeartbeatInterval) * time.Second,
 	}
 }
 
@@ -48,10 +48,45 @@ func (r *Runner) Start(ctx context.Context, masterAddr string) error {
 	}
 	fmt.Printf("[runner] 注册成功: %s\n", resp.GetMessage())
 
-	r.client.StartHeartbeat(ctx)
+	r.startHeartbeat(ctx)
 	fmt.Println("[runner] 心跳已启动")
 
+	r.startTaskLoop(ctx)
+	fmt.Println("[runner] 任务接收循环已启动")
+
 	return nil
+}
+
+// startHeartbeat 定时上报真实运行任务数与节点 CPU/内存使用率
+func (r *Runner) startHeartbeat(ctx context.Context) {
+	interval := r.heartbeatInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cpuPercent, memPercent := collectHostMetrics()
+				running := r.runningTasks.Load()
+
+				env := codec.BuildHeartbeatRequest(r.runnerId, running, cpuPercent, memPercent)
+				data, err := codec.MarshalEnvelope(env)
+				if err != nil {
+					continue
+				}
+				if err := codec.WriteFrame(r.client.Conn(), data); err != nil {
+					fmt.Printf("[runner] 心跳发送失败: %v\n", err)
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (r *Runner) Stop() {
