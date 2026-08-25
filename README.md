@@ -38,6 +38,12 @@ flowops-executor/
 ├── config/             # 配置文件
 │   ├── config.go       # 配置结构体
 │   └── config.*.yaml   # 各环境配置
+├── runner/             # Runner 执行器
+│   ├── runner.go       # 连接/注册/心跳/优雅退出
+│   ├── task.go         # 任务接收循环 + docker compose 执行
+│   ├── artifact.go     # 产物下载（START 前拉取 volumeDir tar 并安全解压）
+│   ├── query.go        # 容器状态/日志查询处理（CONTAINER_STATUS/LOGS）
+│   └── metrics.go      # 宿主 CPU/内存指标采集
 ├── main.go             # 入口文件
 ├── build.bat           # Windows 打包脚本
 └── go.mod              # Go 模块定义

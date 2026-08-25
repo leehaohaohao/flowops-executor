@@ -40,6 +40,10 @@ func (r *Runner) startTaskLoop(ctx context.Context) {
 			switch env.GetType() {
 			case messages.MessageType_TASK_DISPATCH_REQ:
 				r.handleTask(env)
+			case messages.MessageType_CONTAINER_STATUS_REQ:
+				r.handleContainerStatusReq(env)
+			case messages.MessageType_CONTAINER_LOGS_REQ:
+				r.handleContainerLogsReq(env)
 			default:
 				// 忽略注册/心跳等响应
 			}
@@ -86,6 +90,17 @@ type taskResult struct {
 
 func (r *Runner) executeTask(req *messages.TaskRequest) taskResult {
 	res := taskResult{taskId: req.GetTaskId()}
+
+	// START 动作需要构建，先拉取主节点产物（整 volumeDir tar），再以 config 消息为准覆盖写配置
+	if strings.EqualFold(req.GetAction(), "START") {
+		if url := req.GetArtifactUrl(); url != "" {
+			if err := downloadArtifact(url, req.GetVolumeDir()); err != nil {
+				res.errMsg = "产物下载失败: " + err.Error()
+				return res
+			}
+			fmt.Printf("[runner] 产物下载并解压完成: %s\n", req.GetVolumeDir())
+		}
+	}
 
 	if err := writeConfigFiles(req); err != nil {
 		res.errMsg = "写配置落盘失败: " + err.Error()
@@ -161,15 +176,7 @@ func safeJoin(base, key string) (string, error) {
 func runDockerCompose(req *messages.TaskRequest) (string, int32, error) {
 	composeFile := filepath.Join(req.GetVolumeDir(), "docker-compose.yml")
 
-	base, isSub, err := composeBaseCmd()
-	if err != nil {
-		return "", -1, err
-	}
-
-	args := make([]string, 0, 8)
-	if isSub {
-		args = append(args, "compose")
-	}
+	args := make([]string, 0, 6)
 	args = append(args, "-f", composeFile)
 
 	switch strings.ToUpper(req.GetAction()) {
@@ -185,8 +192,25 @@ func runDockerCompose(req *messages.TaskRequest) (string, int32, error) {
 		return "", -1, fmt.Errorf("不支持的 action: %s", req.GetAction())
 	}
 
-	cmd := exec.Command(base, args...)
-	cmd.Dir = req.GetVolumeDir()
+	return runCompose(req.GetVolumeDir(), args...)
+}
+
+// runCompose 在 volumeDir 下执行 docker compose（docker 优先，回退 docker-compose），
+// 返回 (合并输出, exitCode, err)。供任务执行与状态/日志查询共用。
+func runCompose(volumeDir string, args ...string) (string, int32, error) {
+	base, isSub, err := composeBaseCmd()
+	if err != nil {
+		return "", -1, err
+	}
+
+	fullArgs := make([]string, 0, len(args)+1)
+	if isSub {
+		fullArgs = append(fullArgs, "compose")
+	}
+	fullArgs = append(fullArgs, args...)
+
+	cmd := exec.Command(base, fullArgs...)
+	cmd.Dir = volumeDir
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
