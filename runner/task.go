@@ -13,10 +13,11 @@ import (
 	"github.com/leehaohaohao/nexa-protocol/go/messages"
 )
 
-// configMetadataKeys 元数据配置名：value 为 JSON，仅主节点持久化用，不写盘
+// configMetadataKeys 元数据配置名：value 为 JSON 或标记值，仅主节点使用，不写盘
 var configMetadataKeys = map[string]bool{
 	"service_config": true,
 	"port_mappings":  true,
+	"service_type":   true, // 服务类型标记（backend/frontend/fullstack），子节点据此决定拉取产物
 }
 
 // maxOutputLen 回执 output 字段最大长度（字节）
@@ -91,15 +92,14 @@ type taskResult struct {
 func (r *Runner) executeTask(req *messages.TaskRequest) taskResult {
 	res := taskResult{taskId: req.GetTaskId()}
 
-	// START 动作需要构建，先拉取主节点产物（整 volumeDir tar），再以 config 消息为准覆盖写配置
+	// START 动作需要构建：先经协议从主节点拉取产物（JAR/BINARY/DIST）落盘，
+	// 再以 config 消息为准覆盖写配置（产物与配置分离，config 更可靠）
 	if strings.EqualFold(req.GetAction(), "START") {
-		if url := req.GetArtifactUrl(); url != "" {
-			if err := downloadArtifact(url, req.GetVolumeDir()); err != nil {
-				res.errMsg = "产物下载失败: " + err.Error()
-				return res
-			}
-			fmt.Printf("[runner] 产物下载并解压完成: %s\n", req.GetVolumeDir())
+		if err := r.fetchArtifacts(req.GetServiceId(), req.GetConfig()["service_type"], req.GetVolumeDir()); err != nil {
+			res.errMsg = "产物拉取失败: " + err.Error()
+			return res
 		}
+		fmt.Printf("[runner] 产物就绪: %s\n", req.GetVolumeDir())
 	}
 
 	if err := writeConfigFiles(req); err != nil {

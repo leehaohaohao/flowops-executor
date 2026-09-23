@@ -7,6 +7,8 @@ runner:
   master_addr: 127.0.0.1:9090
   heartbeat_interval: 10
   version: 1.0.0
+  # 注册令牌：与主节点 nexa_node 表中录入的一致（主节点存 sha256，这里配明文）
+  token: change-me
 
 log:
   level: info           # debug | info | warn | error

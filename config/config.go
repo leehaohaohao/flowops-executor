@@ -6,6 +6,7 @@ type Config struct {
 		MasterAddr        string `yaml:"master_addr"`        // master 地址，如 127.0.0.1:9000
 		HeartbeatInterval int    `yaml:"heartbeat_interval"` // 心跳间隔（秒），默认 10
 		Version           string `yaml:"version"`            // runner 版本号
+		Token             string `yaml:"token"`              // 注册令牌（L1 认证，与主节点 nexa_node 录入的一致）
 	} `yaml:"runner"`
 	Database struct {
 		Host     string `yaml:"host"`

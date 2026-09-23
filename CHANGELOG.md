@@ -2,6 +2,21 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（SemVer）规范。
 
+## v0.3.0 (2026-08-25)
+
+### 新增
+
+- 产物标准化 + 子节点认证（2026-08-25 计划 · 步骤 3）：
+  - 注册令牌认证（L1）：`runner.token` 配置随 `REGISTER` 上报，主节点校验失败拒绝注册；`client.Register` 检查回执 `success`，被拒时直接报错（`runner/runner.go`、`config/`）
+  - 协议分块传输替代 HTTP 下载：`runner/artifact.go` 重写为 `ArtifactTransferManager`——发 `ARTIFACT_REQ` → 收 `ARTIFACT_DATA` 分块重组（校验序号连续）→ 整体 sha256 校验 → 按类型落盘（JAR→app.jar、BINARY→app、DIST→安全解压 tar 到 dist/）→ 回 `ARTIFACT_ACK`
+  - 产物类型按服务类型推断：backend→JAR（回退 BINARY）、frontend→DIST、fullstack→后端产物 + DIST；`service_type` 作为元数据不再写盘
+  - 传输带超时（5 分钟）与大小上限（1GB），期间到达的非产物消息记录并跳过
+- 协议库 Go client 补全 token 支持：`WithToken` option、`Register` 携带 token 并校验回执
+
+### 变更
+
+- 移除基于 HTTP 的产物下载（`ArtifactDownloadController` 已由主节点删除，`artifact_url` 不再使用）
+
 ## v0.2.0 (2026-08-11)
 
 ### 新增

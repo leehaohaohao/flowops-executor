@@ -23,6 +23,7 @@ func New(cfg *config.Config) *Runner {
 	opts := []client.Option{
 		client.WithRunnerId(cfg.Runner.Id),
 		client.WithVersion(cfg.Runner.Version),
+		client.WithToken(cfg.Runner.Token),
 	}
 
 	if ip := getLocalIP(); ip != "" {

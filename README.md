@@ -39,9 +39,9 @@ flowops-executor/
 │   ├── config.go       # 配置结构体
 │   └── config.*.yaml   # 各环境配置
 ├── runner/             # Runner 执行器
-│   ├── runner.go       # 连接/注册/心跳/优雅退出
+│   ├── runner.go       # 连接/注册(token 认证)/心跳/优雅退出
 │   ├── task.go         # 任务接收循环 + docker compose 执行
-│   ├── artifact.go     # 产物下载（START 前拉取 volumeDir tar 并安全解压）
+│   ├── artifact.go     # 产物协议传输（ARTIFACT_REQ/CHUNK/ACK + sha256 校验 + 落盘）
 │   ├── query.go        # 容器状态/日志查询处理（CONTAINER_STATUS/LOGS）
 │   └── metrics.go      # 宿主 CPU/内存指标采集
 ├── main.go             # 入口文件
@@ -57,3 +57,5 @@ flowops-executor/
 - `config.prod.yaml` - 生产环境
 
 通过环境变量 `APP_ENV` 切换，默认为 `dev`
+
+`runner.token`：注册令牌（L1 认证），需与主节点 `nexa_node` 表录入的令牌一致（主节点存 sha256，这里配明文；不配置则注册会被主节点拒绝）。
