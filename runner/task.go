@@ -2,7 +2,6 @@ package runner
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,37 +22,9 @@ var configMetadataKeys = map[string]bool{
 // maxOutputLen 回执 output 字段最大长度（字节）
 const maxOutputLen = 8192
 
-// startTaskLoop 启动任务接收循环，处理主节点下发的 TASK_DISPATCH_REQ
-func (r *Runner) startTaskLoop(ctx context.Context) {
-	go func() {
-		for {
-			env, err := r.client.ReadEnvelope()
-			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					fmt.Printf("[runner] 读取消息失败，任务接收循环退出: %v\n", err)
-					return
-				}
-			}
-
-			switch env.GetType() {
-			case messages.MessageType_TASK_DISPATCH_REQ:
-				r.handleTask(env)
-			case messages.MessageType_CONTAINER_STATUS_REQ:
-				r.handleContainerStatusReq(env)
-			case messages.MessageType_CONTAINER_LOGS_REQ:
-				r.handleContainerLogsReq(env)
-			default:
-				// 忽略注册/心跳等响应
-			}
-		}
-	}()
-}
-
-// handleTask 处理单个任务：解包 → 配置落盘 → 执行 docker compose → 回传结果
-func (r *Runner) handleTask(env *messages.Envelope) {
+// handleTask 处理单个任务：解包 → 拉取产物 → 配置落盘 → 执行 docker compose → 回传结果。
+// 断线时任务不自动重放：结果无法回传时仅记录日志，由主节点的掉线/超时机制兜底。
+func (r *Runner) handleTask(sess *session, env *messages.Envelope) {
 	req := &messages.TaskRequest{}
 	if err := codec.UnmarshalMessage(env.GetPayload(), req); err != nil {
 		fmt.Printf("[runner] 解析任务请求失败: %v\n", err)
@@ -64,20 +35,20 @@ func (r *Runner) handleTask(env *messages.Envelope) {
 		req.GetTaskId(), req.GetServiceId(), req.GetDeployName(), req.GetAction(), req.GetVolumeDir())
 
 	r.runningTasks.Add(1)
-	result := r.executeTask(req)
+	result := r.executeTask(sess, req)
 	r.runningTasks.Add(-1)
 
 	fmt.Printf("[runner] 任务执行完成: taskId=%s success=%v exitCode=%d\n",
 		result.taskId, result.success, result.exitCode)
 
-	respEnv := codec.BuildTaskDispatchResponse(r.runnerId, result.taskId, result.success, result.exitCode, result.output, result.errMsg)
+	respEnv := codec.BuildTaskDispatchResponse(sess.runnerId, result.taskId, result.success, result.exitCode, result.output, result.errMsg)
 	data, err := codec.MarshalEnvelope(respEnv)
 	if err != nil {
 		fmt.Printf("[runner] 序列化任务回执失败: %v\n", err)
 		return
 	}
-	if err := codec.WriteFrame(r.client.Conn(), data); err != nil {
-		fmt.Printf("[runner] 回传任务回执失败: %v\n", err)
+	if err := codec.WriteFrame(sess.conn, data); err != nil {
+		fmt.Printf("[runner] 回传任务回执失败（连接可能已断开，任务不重放）: %v\n", err)
 	}
 }
 
@@ -89,13 +60,13 @@ type taskResult struct {
 	errMsg   string
 }
 
-func (r *Runner) executeTask(req *messages.TaskRequest) taskResult {
+func (r *Runner) executeTask(sess *session, req *messages.TaskRequest) taskResult {
 	res := taskResult{taskId: req.GetTaskId()}
 
 	// START 动作需要构建：先经协议从主节点拉取产物（JAR/BINARY/DIST）落盘，
 	// 再以 config 消息为准覆盖写配置（产物与配置分离，config 更可靠）
 	if strings.EqualFold(req.GetAction(), "START") {
-		if err := r.fetchArtifacts(req.GetServiceId(), req.GetConfig()["service_type"], req.GetVolumeDir()); err != nil {
+		if err := r.fetchArtifacts(sess, req.GetServiceId(), req.GetConfig()["service_type"], req.GetVolumeDir()); err != nil {
 			res.errMsg = "产物拉取失败: " + err.Error()
 			return res
 		}

@@ -9,6 +9,12 @@ runner:
   version: 1.0.0
   # 注册令牌：与主节点 nexa_node 表中录入的一致（主节点存 sha256，这里配明文）
   token: change-me
+  # 连接恢复：主节点未启动或重启时自动重连
+  connect_timeout: 5               # 单次拨号超时（秒）
+  reconnect_initial_interval: 1    # 重连初始退避（秒）
+  reconnect_max_interval: 30       # 重连最大退避（秒）
+  register_timeout: 10             # 注册响应超时（秒）
+  auth_retry_interval: 60          # token 无效/节点未登记时的低频重试间隔（秒）
 
 log:
   level: info           # debug | info | warn | error

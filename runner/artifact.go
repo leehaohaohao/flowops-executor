@@ -25,46 +25,47 @@ const maxArtifactSize = 1 << 30
 // fetchArtifact 通过自定义协议向主节点拉取单个产物：
 // 发 ARTIFACT_REQ → 读 ARTIFACT_DATA 分块重组 → sha256 校验 → 按类型落盘 → 回 ARTIFACT_ACK。
 // 主节点传输失败时回 ACK(ok=false)，此处同步返回错误。
-func (r *Runner) fetchArtifact(serviceId, typ, volumeDir string) error {
+// 连接来自本次会话（sess），断线重连后会使用新会话的连接。
+func (r *Runner) fetchArtifact(sess *session, serviceId, typ, volumeDir string) error {
 	req := &messages.ArtifactRequest{
 		ServiceId: serviceId,
 		Type:      typ,
 		Version:   0, // 0 = 最新
 	}
-	reqEnv := codec.BuildArtifactRequest(r.runnerId, req)
+	reqEnv := codec.BuildArtifactRequest(sess.runnerId, req)
 	data, err := codec.MarshalEnvelope(reqEnv)
 	if err != nil {
 		return fmt.Errorf("序列化产物请求失败: %w", err)
 	}
-	if err := codec.WriteFrame(r.client.Conn(), data); err != nil {
+	if err := codec.WriteFrame(sess.conn, data); err != nil {
 		return fmt.Errorf("发送产物请求失败: %w", err)
 	}
 	requestId := reqEnv.GetRequestId()
 	fmt.Printf("[runner] 产物请求已发送: serviceId=%s type=%s requestId=%s\n", serviceId, typ, requestId)
 
-	content, checksum, err := r.receiveArtifact(requestId)
+	content, checksum, err := r.receiveArtifact(sess, requestId)
 	if err != nil {
-		r.sendArtifactAck(requestId, false, err.Error())
+		r.sendArtifactAck(sess, requestId, false, err.Error())
 		return err
 	}
 	if err := verifyChecksum(content, checksum); err != nil {
-		r.sendArtifactAck(requestId, false, err.Error())
+		r.sendArtifactAck(sess, requestId, false, err.Error())
 		return err
 	}
 	if err := saveArtifact(typ, content, volumeDir); err != nil {
-		r.sendArtifactAck(requestId, false, err.Error())
+		r.sendArtifactAck(sess, requestId, false, err.Error())
 		return err
 	}
 
-	r.sendArtifactAck(requestId, true, "")
+	r.sendArtifactAck(sess, requestId, true, "")
 	fmt.Printf("[runner] 产物拉取完成: type=%s size=%d\n", typ, len(content))
 	return nil
 }
 
 // receiveArtifact 读取产物分块直到收齐，返回 (重组内容, 末块 checksum)。
 // 期间到达的非产物消息记录并跳过（当前架构任务串行处理，传输窗口内不会并发处理其他请求）。
-func (r *Runner) receiveArtifact(requestId string) ([]byte, string, error) {
-	conn := r.client.Conn()
+func (r *Runner) receiveArtifact(sess *session, requestId string) ([]byte, string, error) {
+	conn := sess.conn
 	if err := conn.SetReadDeadline(time.Now().Add(artifactTransferTimeout)); err != nil {
 		return nil, "", fmt.Errorf("设置读取超时失败: %w", err)
 	}
@@ -79,7 +80,7 @@ func (r *Runner) receiveArtifact(requestId string) ([]byte, string, error) {
 		if buf.Len() > maxArtifactSize {
 			return nil, "", fmt.Errorf("产物超过大小上限: %d", maxArtifactSize)
 		}
-		env, err := r.client.ReadEnvelope()
+		env, err := sess.client.ReadEnvelope()
 		if err != nil {
 			return nil, "", fmt.Errorf("读取产物分块失败: %w", err)
 		}
@@ -134,15 +135,15 @@ func (r *Runner) receiveArtifact(requestId string) ([]byte, string, error) {
 }
 
 // sendArtifactAck 向主节点回传产物传输确认（成功/失败）
-func (r *Runner) sendArtifactAck(requestId string, ok bool, errMsg string) {
+func (r *Runner) sendArtifactAck(sess *session, requestId string, ok bool, errMsg string) {
 	ack := &messages.ArtifactAck{TransferId: requestId, Ok: ok, Error: errMsg}
-	env := codec.BuildArtifactAck(requestId, r.runnerId, ack)
+	env := codec.BuildArtifactAck(requestId, sess.runnerId, ack)
 	data, err := codec.MarshalEnvelope(env)
 	if err != nil {
 		fmt.Printf("[runner] 序列化产物 ACK 失败: %v\n", err)
 		return
 	}
-	if err := codec.WriteFrame(r.client.Conn(), data); err != nil {
+	if err := codec.WriteFrame(sess.conn, data); err != nil {
 		fmt.Printf("[runner] 发送产物 ACK 失败: %v\n", err)
 	}
 }
@@ -151,7 +152,7 @@ func (r *Runner) sendArtifactAck(requestId string, ok bool, errMsg string) {
 //   - backend：JAR 优先，失败回退 BINARY（二选一）
 //   - frontend：DIST
 //   - fullstack：后端产物（JAR/BINARY 二选一）+ DIST
-func (r *Runner) fetchArtifacts(serviceId, serviceType, volumeDir string) error {
+func (r *Runner) fetchArtifacts(sess *session, serviceId, serviceType, volumeDir string) error {
 	types := neededArtifactTypes(serviceType)
 	if len(types) == 0 {
 		return nil
@@ -163,7 +164,7 @@ func (r *Runner) fetchArtifacts(serviceId, serviceType, volumeDir string) error 
 	var distErr error
 
 	for _, t := range types {
-		err := r.fetchArtifact(serviceId, t, volumeDir)
+		err := r.fetchArtifact(sess, serviceId, t, volumeDir)
 		switch t {
 		case "JAR", "BINARY":
 			jarBinaryErr = err

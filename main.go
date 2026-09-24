@@ -31,7 +31,7 @@ func loadConfig(path string) (*config.Config, error) {
 }
 
 func main() {
-	// 加载配置
+	// 加载配置：配置错误属于明确的启动错误，与"暂时连不上主节点"区分处理，直接退出
 	env := os.Getenv("APP_ENV")
 	if env == "" {
 		env = "prod"
@@ -40,7 +40,7 @@ func main() {
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {
-		log.Fatalf("加载配置文件失败: %v", err)
+		log.Fatalf("加载配置文件失败 (%s): %v", configPath, err)
 	}
 
 	fmt.Printf("配置加载成功: runner id=%s, master=%s\n", cfg.Runner.Id, cfg.Runner.MasterAddr)
@@ -48,22 +48,15 @@ func main() {
 	// TODO: 初始化日志
 	// TODO: 初始化数据库
 
-	// 启动 Runner 客户端
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// 退出信号驱动 context：等待重试、拨号、已注册三个阶段都能快速结束
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
+	// Run 阻塞运行唯一的连接管理循环：主节点未启动或运行中重启时会自动重连，不再直接退出
 	r := runner.New(cfg)
-	if err := r.Start(ctx, cfg.Runner.MasterAddr); err != nil {
-		log.Fatalf("Runner 启动失败: %v", err)
+	if err := r.Run(ctx); err != nil {
+		log.Fatalf("Runner 运行失败: %v", err)
 	}
-
-	// 信号量优雅关闭
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	fmt.Println("\n收到关闭信号，正在优雅退出...")
-	cancel()
-	r.Stop()
 
 	fmt.Printf("FlowOps Executor 已停止 (env: %s)\n", env)
 }

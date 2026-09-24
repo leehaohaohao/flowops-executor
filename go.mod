@@ -3,7 +3,7 @@ module flowops-executor
 go 1.26.3
 
 require (
-	github.com/leehaohaohao/nexa-protocol/go v0.2.0
+	github.com/leehaohaohao/nexa-protocol/go v0.6.1
 	github.com/shirou/gopsutil/v4 v4.26.7
 	gopkg.in/yaml.v3 v3.0.1
 )

@@ -17,7 +17,7 @@ const defaultLogTail = 30
 const maxQueryOutputLen = 256 * 1024
 
 // handleContainerStatusReq 处理主节点下发的 CONTAINER_STATUS_REQ，回执回填请求 request_id
-func (r *Runner) handleContainerStatusReq(env *messages.Envelope) {
+func (r *Runner) handleContainerStatusReq(sess *session, env *messages.Envelope) {
 	req := &messages.ContainerStatusRequest{}
 	if err := codec.UnmarshalMessage(env.GetPayload(), req); err != nil {
 		fmt.Printf("[runner] 解析状态查询失败: %v\n", err)
@@ -27,13 +27,13 @@ func (r *Runner) handleContainerStatusReq(env *messages.Envelope) {
 		req.GetServiceId(), req.GetDeployName(), req.GetVolumeDir())
 
 	resp := handleContainerStatus(req)
-	resp.RunnerId = r.runnerId
+	resp.RunnerId = sess.runnerId
 
-	r.sendQueryResponse(env.GetRequestId(), codec.BuildContainerStatusResponse(env.GetRequestId(), r.runnerId, resp))
+	r.sendQueryResponse(sess, env.GetRequestId(), codec.BuildContainerStatusResponse(env.GetRequestId(), sess.runnerId, resp))
 }
 
 // handleContainerLogsReq 处理主节点下发的 CONTAINER_LOGS_REQ，回执回填请求 request_id
-func (r *Runner) handleContainerLogsReq(env *messages.Envelope) {
+func (r *Runner) handleContainerLogsReq(sess *session, env *messages.Envelope) {
 	req := &messages.ContainerLogsRequest{}
 	if err := codec.UnmarshalMessage(env.GetPayload(), req); err != nil {
 		fmt.Printf("[runner] 解析日志查询失败: %v\n", err)
@@ -43,9 +43,9 @@ func (r *Runner) handleContainerLogsReq(env *messages.Envelope) {
 		req.GetServiceId(), req.GetDeployName(), req.GetVolumeDir(), req.GetTail())
 
 	resp := handleContainerLogs(req)
-	resp.RunnerId = r.runnerId
+	resp.RunnerId = sess.runnerId
 
-	r.sendQueryResponse(env.GetRequestId(), codec.BuildContainerLogsResponse(env.GetRequestId(), r.runnerId, resp))
+	r.sendQueryResponse(sess, env.GetRequestId(), codec.BuildContainerLogsResponse(env.GetRequestId(), sess.runnerId, resp))
 }
 
 // sendQueryResponse 发送查询回执；requestId 回填请求的 request_id。
@@ -54,13 +54,13 @@ func (r *Runner) handleContainerLogsReq(env *messages.Envelope) {
 // QueryManager 实际按 runnerId 关联（同节点同时只允许一个查询，串行无冲突）。
 // 回填 request_id 是协议层约定（codec builder 已支持），保留供未来协议透传后
 // 按 request_id 关联——届时可支持同节点并发查询与断线重连的准确关联。
-func (r *Runner) sendQueryResponse(requestId string, env *messages.Envelope) {
+func (r *Runner) sendQueryResponse(sess *session, requestId string, env *messages.Envelope) {
 	data, err := codec.MarshalEnvelope(env)
 	if err != nil {
 		fmt.Printf("[runner] 序列化查询回执失败: %v\n", err)
 		return
 	}
-	if err := codec.WriteFrame(r.client.Conn(), data); err != nil {
+	if err := codec.WriteFrame(sess.conn, data); err != nil {
 		fmt.Printf("[runner] 回传查询回执失败: %v\n", err)
 		return
 	}
