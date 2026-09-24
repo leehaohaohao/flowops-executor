@@ -38,9 +38,6 @@ config/config.prod.yaml
 /build/
 /dist/
 
-# 部署包二进制产物（由 build.bat / CI 产出，不入库）
-/bin/
-
 # Logs
 *.log
 logs/
