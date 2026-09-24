@@ -30,6 +30,10 @@ Thumbs.db
 .env.prod
 
 # Config files (contains sensitive data)
+# 注意：config.dev.yaml / config.prod.yaml 为环境私有配置，刻意不入库。
+# 代码以通配模式 embed（//go:embed config.*.yaml），仓库中的
+# config.example.yaml 保证 clone 后可正常构建；缺失环境的内嵌配置时，
+# 需自行从 example 创建，或改用外部配置 / CLI / ENV 提供取值。
 config/config.yaml
 config/config.dev.yaml
 config/config.prod.yaml

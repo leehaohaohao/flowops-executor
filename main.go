@@ -2,48 +2,35 @@ package main
 
 import (
 	"context"
-	"embed"
+	"errors"
 	"fmt"
-	"flowops-executor/config"
-	"flowops-executor/runner"
-	"io/fs"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"gopkg.in/yaml.v3"
+	"flowops-executor/config"
+	"flowops-executor/runner"
 )
 
-//go:embed config/*
-var configFS embed.FS
-
-func loadConfig(path string) (*config.Config, error) {
-	data, err := fs.ReadFile(configFS, path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg config.Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
 func main() {
-	// 加载配置：配置错误属于明确的启动错误，与"暂时连不上主节点"区分处理，直接退出
-	env := os.Getenv("APP_ENV")
-	if env == "" {
-		env = "prod"
-	}
-	configPath := fmt.Sprintf("config/config.%s.yaml", env)
-
-	cfg, err := loadConfig(configPath)
+	// 多来源配置加载（逐字段解析）：
+	//   CLI > ENV > 外部 YAML（--config / FLOWOPS_CONFIG / <exeDir>/config/config.{APP_ENV}.yaml）> 内嵌 YAML
+	// 配置错误属于明确的启动错误（与"暂时连不上主节点"区分），直接退出。
+	res, err := config.Load(os.Args[1:], os.Stderr)
 	if err != nil {
-		log.Fatalf("加载配置文件失败 (%s): %v", configPath, err)
+		if errors.Is(err, config.ErrHelp) {
+			// -h/--help：用法输出到 stdout，正常退出
+			config.PrintUsage(os.Stdout)
+			return
+		}
+		log.Fatalf("加载配置失败: %v", err)
 	}
 
-	fmt.Printf("配置加载成功: runner id=%s, master=%s\n", cfg.Runner.Id, cfg.Runner.MasterAddr)
+	// 启动日志：打印各字段来源；token 仅显示 configured/missing，不输出明文
+	for _, line := range res.LogSummary() {
+		fmt.Printf("[INFO] %s\n", line)
+	}
 
 	// TODO: 初始化日志
 	// TODO: 初始化数据库
@@ -53,10 +40,10 @@ func main() {
 	defer stop()
 
 	// Run 阻塞运行唯一的连接管理循环：主节点未启动或运行中重启时会自动重连，不再直接退出
-	r := runner.New(cfg)
+	r := runner.New(res.Config)
 	if err := r.Run(ctx); err != nil {
 		log.Fatalf("Runner 运行失败: %v", err)
 	}
 
-	fmt.Printf("FlowOps Executor 已停止 (env: %s)\n", env)
+	fmt.Printf("FlowOps Executor 已停止 (env: %s)\n", res.AppEnv)
 }

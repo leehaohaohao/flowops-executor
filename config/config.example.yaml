@@ -1,24 +1,27 @@
-# FlowOps Executor 配置文件示例
-# 复制此文件并重命名为 config.{env}.yaml
-# cp config.example.yaml config.dev.yaml
+# FlowOps Executor 外部配置示例
+#
+# 用法（二选一）：
+#   ./flowops-executor --config /etc/flowops/executor.yaml
+#   FLOWOPS_CONFIG=/etc/flowops/executor.yaml ./flowops-executor
+#
+# 只需写需要覆盖的字段：未写字段会继续按
+#   外部 YAML > 内嵌 YAML
+# 逐级 fallback（核心字段 id / master_addr / token / version 还会先看 CLI / ENV）。
+#
+# 建议：token 不落在配置文件里，改用 FLOWOPS_RUNNER_TOKEN 提供，
+# 这样既避免明文落盘，也便于容器注入。
 
 runner:
-  id: runner-1
-  master_addr: 127.0.0.1:9090
-  heartbeat_interval: 10
+  id: runner-01
+  master_addr: 10.0.0.10:9090
   version: 1.0.0
-  # 注册令牌：与主节点 nexa_node 表中录入的一致（主节点存 sha256，这里配明文）
-  token: change-me
-  # 连接恢复：主节点未启动或重启时自动重连
-  connect_timeout: 5               # 单次拨号超时（秒）
-  reconnect_initial_interval: 1    # 重连初始退避（秒）
-  reconnect_max_interval: 30       # 重连最大退避（秒）
-  register_timeout: 10             # 注册响应超时（秒）
-  auth_retry_interval: 60          # token 无效/节点未登记时的低频重试间隔（秒）
+  # token 由环境变量提供：
+  #   FLOWOPS_RUNNER_TOKEN=xxxxx ./flowops-executor --config /etc/flowops/executor.yaml
 
-log:
-  level: info           # debug | info | warn | error
-  file_path: ./logs/app.log
-  max_size: 100         # 单个日志文件最大尺寸，单位MB
-  max_backups: 7        # 保留旧日志文件最大数量
-  max_age: 30           # 保留旧日志文件最大天数
+# 可选：非核心字段同样支持「外部 > 内嵌」覆盖（写成同样的 runner: 段即可）
+#   heartbeat_interval: 10
+#   connect_timeout: 5
+#   reconnect_initial_interval: 1
+#   reconnect_max_interval: 30
+#   register_timeout: 10
+#   auth_retry_interval: 60

@@ -3,8 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
-	"fmt"
 	"flowops-executor/config"
+	"fmt"
 	"math/rand"
 	"net"
 	"sync"
@@ -155,9 +155,9 @@ func (r *Runner) runSession(ctx context.Context) error {
 		fmt.Printf("[runner] 会话中断: %v\n", sessionErr)
 	}
 
-	cancel()                 // 通知另一协程退出
-	_ = sess.client.Close()  // 幂等关闭连接，解除阻塞中的读写
-	wg.Wait()                // 等协程真正退出再进入下一轮
+	cancel()                // 通知另一协程退出
+	_ = sess.client.Close() // 幂等关闭连接，解除阻塞中的读写
+	wg.Wait()               // 等协程真正退出再进入下一轮
 	fmt.Println("[runner] 会话已清理")
 
 	return sessionErr

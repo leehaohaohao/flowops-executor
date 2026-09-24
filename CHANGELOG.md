@@ -2,6 +2,32 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（SemVer）规范。
 
+## v0.5.0 (2026-09-24)
+
+### 新增
+
+- **多来源配置机制**：同一个已编译二进制可通过 CLI / ENV / 外部 YAML 覆盖内嵌配置，**无需重新编译**
+  - 逐字段独立解析，优先级固定 `CLI > ENV > 外部 YAML > 内嵌 YAML`；空串与空白视为「未提供」，继续向后 fallback
+  - 核心字段 `runner.id` / `master_addr` / `token` / `version` 支持 CLI 与 ENV；其余字段支持「外部 > 内嵌」覆盖
+  - CLI：`--env` / `--config` / `--runner-id` / `--master-addr` / `--token` / `--runner-version` / `-h|--help`（帮助输出到 stdout）
+  - ENV：`APP_ENV` / `FLOWOPS_CONFIG` / `FLOWOPS_RUNNER_ID` / `FLOWOPS_MASTER_ADDR` / `FLOWOPS_RUNNER_TOKEN` / `FLOWOPS_RUNNER_VERSION`
+  - 外部配置定位：`--config` > `FLOWOPS_CONFIG` > `<可执行文件目录>/config/config.{APP_ENV}.yaml`（基于 `os.Executable()`，不依赖当前工作目录）
+  - 失败策略：显式指定的文件缺失/不可读/YAML 非法 → **启动失败不 fallback**；默认路径不存在 → 正常用内嵌；默认路径存在但读取失败 → **启动失败不静默回退**
+  - 统一校验：全部来源解析完成后校验（核心字段非空 + `master_addr` 的 `host:port` 与端口范围）
+  - 启动日志打印各字段来源；**token 只输出 `configured`/`missing`，不泄露明文**
+  - 配置包重构为 `config/{config,embedded,env,cli,loader,resolver,validate,load}.go`，新增 `ValueSource`/`ConfigSources` 来源记录
+
+### 变更
+
+- `config.example.yaml`：改为「外部配置示例」（只需写需要覆盖的字段）
+- `config.dev.yaml` / `config.prod.yaml`：保持**环境私有、不入库**（`.gitignore` 不变）。为兼容该策略，`go:embed` 由逐个文件名改为**通配模式**（仓库中的 `config.example.yaml` 保证 clone 后可构建）；某环境的内嵌配置缺失时返回 `ErrEmbeddedNotFound` 并给出可操作提示
+- `main.go`：`//go:embed` 与配置加载迁移至 `config` 包；改用 `config.Load()` 并打印来源摘要
+
+### 说明
+
+- 当前仅核心 4 个字段支持 CLI/ENV；心跳与连接恢复参数、`database`、`log` 暂支持外部 YAML 覆盖（后续可按需追加）
+- 配置机制本身跨平台；部署场景定位为 Linux amd64
+
 ## v0.4.0 (2026-09-23)
 
 ### 新增
