@@ -16,8 +16,8 @@
 
 ### 变更
 
-- 协议库升级至 **Go v0.6.1**（`go.mod`），接入 `ConnectContext` / `RegisterContext` / `Close` 等新 API
-  - v0.6.1 的修复集中在主节点侧（已注册消息按连接绑定会话鉴权、超时/断开仅通知被移除的会话），`client` / `codec` 包无变化，executor 正常路径不受影响：注册成功后才发心跳与回执、退出时发送 `DISCONNECT` 供主节点条件移除会话、会话隔离保证被接管的旧连接不再发消息
+- 协议库升级至 **Go v0.6.2**（`go.mod`），接入 `ConnectContext` / `RegisterContext` / `Close` 等新 API
+  - v0.6.1 / v0.6.2 的修复均集中在主节点侧（已注册消息按连接绑定会话鉴权、断开事件所有权统一），`client` / `codec` 包无变化，executor 正常路径不受影响：注册成功后才发心跳与回执、退出时发送 `DISCONNECT` 供主节点条件移除会话、会话隔离保证被接管的旧连接不再发消息
 - `main.go` 改用 `signal.NotifyContext` 驱动 `Run(ctx)`，不再在连接/注册失败时直接退出；配置加载失败仍为明确启动错误
 - README 修正环境默认值（实际为 `prod`，原文写 `dev`），补充连接恢复配置与运行行为说明
 
