@@ -1,6 +1,79 @@
 # FlowOps Executor
 
-## 快速开始
+## 一键启动（部署包）
+
+部署包内含**预编译产物**与启动脚本，目标机器**不需要安装 Go**。
+
+```
+flowops-executor/
+├── start.bat / start.sh                  # 薄入口（转调 scripts/）
+├── scripts/start.ps1 | start.sh          # 启动逻辑
+├── bin/windows-amd64/flowops-executor.exe   # Windows native 产物
+├── bin/linux-amd64/flowops-executor         # Linux native 产物
+└── docker/                               # docker 模式的启动入口（Linux）
+```
+
+### Windows（仅 native）
+
+```bat
+start.bat                  :: 默认 native，前台运行
+start.bat native --check   :: 只检查运行环境，不启动
+start.bat docker           :: Windows 暂不支持 docker 模式（exit 3）
+```
+
+### Linux（默认 docker）
+
+```bash
+./start.sh                       # 默认 docker 模式（调用 docker/start.sh）
+./start.sh native                # 宿主机前台运行预编译二进制
+./start.sh native --check        # 只检查环境，不启动
+./start.sh docker --check        # 只检查 Docker CLI/daemon 与入口
+./start.sh docker --foreground   # 前台 attach（透传 Docker 入口退出码）
+```
+
+### 模式对照
+
+| 平台 | native | docker | 默认模式 |
+|------|--------|--------|---------|
+| Windows amd64 | ✅ 支持 | ❌ 当前不支持（exit 3） | `native` |
+| Linux amd64 | ✅ 支持 | ✅ 支持 | `docker` |
+
+- **native**：不依赖 Docker，机器未安装 Docker 也能正常运行
+- **docker**：executor 运行在容器内，不要求宿主机存在 `bin/`；容器启动与状态确认由 `docker/start.sh` 负责
+- 两种模式**互斥**，不会重复启动 executor
+
+### 退出码
+
+| 码 | 含义 |
+|----|------|
+| 0 | 成功 |
+| 1 | 参数 / `APP_ENV` / 部署目录错误 |
+| 2 | 平台不支持（仅支持 Windows/Linux amd64） |
+| 3 | 运行模式非法（含 Windows 请求 docker） |
+| 4 | Docker CLI 不存在 |
+| 5 | Docker daemon 不可用或检查超时（20s） |
+| 6 | native 二进制缺失或不可执行 |
+| 7 | Docker 启动入口缺失 |
+| 8 | Docker executor 启动失败 |
+
+native 模式下 executor 自身的退出码**原样透传**。
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `APP_ENV` | `prod` | `prod` / `dev`，决定二进制使用的内嵌配置 |
+| `FLOWOPS_DOCKER_ENTRY` | 空 | 覆盖 Docker 启动入口（默认 `docker/start.sh`） |
+
+### 常见失败处理
+
+- **Docker daemon 不可用**（exit 5）：先启动 Docker 再重试；本脚本**不安装、不启动** Docker
+- **未找到 executor**（exit 6）：确认部署包包含当前平台二进制；Linux 无执行权限时脚本会自动 `chmod +x`（`--check` 模式不修改文件，直接报错退出）
+- **未找到 Docker 启动入口**（exit 7）：确认 `docker/start.sh` 存在，或用 `FLOWOPS_DOCKER_ENTRY` 指定路径
+- **改配置不生效**：配置通过 `go:embed` 编译进二进制，外部 `config/` 目录不影响运行；请用 `APP_ENV` 切换内嵌配置
+- **模式只能作为第一个位置参数**：`./start.sh native --check` ✅；脚本选项需写在 executor 参数之前（`native` 模式下第一个未知参数之后的参数全部透传给 executor；`docker` 模式会报参数错误）
+
+## 从源码构建与运行（开发）
 
 ### 1. 配置文件
 
@@ -37,15 +110,25 @@ go build -o flowops-executor.exe .
 flowops-executor/
 ├── config/             # 配置文件
 │   ├── config.go       # 配置结构体
-│   └── config.*.yaml   # 各环境配置
+│   └── config.*.yaml   # 各环境配置（编译期 embed 进二进制）
 ├── runner/             # Runner 执行器
 │   ├── runner.go       # 连接管理循环（重连/退避/会话生命周期）+ 注册(token)/心跳
 │   ├── task.go         # 任务处理 + docker compose 执行
 │   ├── artifact.go     # 产物协议传输（ARTIFACT_REQ/CHUNK/ACK + sha256 校验 + 落盘）
 │   ├── query.go        # 容器状态/日志查询处理（CONTAINER_STATUS/LOGS）
 │   └── metrics.go      # 宿主 CPU/内存指标采集
+├── scripts/            # 启动脚本主逻辑（部署包）
+│   ├── start.ps1       # Windows（仅 native）
+│   └── start.sh        # Linux（native / docker）
+├── bin/                # 预编译产物（部署包；仓库内 gitignore）
+│   ├── windows-amd64/flowops-executor.exe
+│   └── linux-amd64/flowops-executor
+├── docker/             # docker 模式启动入口（由 Docker 规范化任务提供）
+├── start.bat           # Windows 薄入口
+├── start.sh            # Linux 薄入口
 ├── main.go             # 入口文件
-├── build.bat           # Windows 打包脚本
+├── build.bat           # 打包脚本（产出 bin/<platform>/ 二进制）
+├── .gitattributes      # 换行符策略（*.sh 强制 LF）
 └── go.mod              # Go 模块定义
 ```
 
